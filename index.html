@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GGI-AIC Hologram Clone Feature</title>
+    <!-- Tailwind CSS for modern styling and layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- GLTFLoader and OrbitControls from Three.js examples -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'apollo-dark': '#0f172a',
+                        'holo-blue': '#00ffff',
+                        'holo-green': '#34d399',
+                        'code-gray': '#1e293b',
+                    },
+                    fontFamily: {
+                        'mono': ['Inconsolata', 'monospace'],
+                        'sans': ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* Base styling for the container */
+        #container {
+            width: 100%;
+            height: 100%;
+            background-color: #0f172a;
+            position: relative;
+        }
+
+        /* Ensure Canvas fills its parent container */
+        canvas {
+            display: block;
+        }
+        
+        /* Custom scrollbar for aesthetic */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #00ffff55;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+    </style>
+</head>
+<body class="bg-apollo-dark text-gray-100 font-sans min-h-screen p-4 md:p-8">
+    
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 p-4 bg-code-gray/50 rounded-xl shadow-lg border border-holo-blue/30">
+            <h1 class="text-3xl font-bold text-holo-blue tracking-wider">Hologram Clone Feature Implementation (Three.js)</h1>
+            <p class="text-gray-400 mt-1">Simulazione del componente `HologramClone` per la visualizzazione 3D di asset critici.</p>
+        </header>
+
+        <!-- Main Visualization and Controls -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- 3D Viewer Container -->
+            <div class="lg:col-span-2 glass-panel p-2 rounded-xl shadow-2xl bg-code-gray border border-holo-green/30">
+                <div id="container" class="aspect-video lg:aspect-none h-[60vh] rounded-lg relative overflow-hidden">
+                    <div class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm z-10" id="loading-status">Caricamento in corso: Hologram Core...</div>
+                </div>
+            </div>
+
+            <!-- Configuration Panel -->
+            <div class="lg:col-span-1 space-y-6">
+                
+                <div class="p-6 bg-code-gray rounded-xl shadow-inner border border-holo-blue/20">
+                    <h3 class="text-xl font-bold text-holo-green mb-4 border-b border-holo-blue/50 pb-2">Hologram Parameters</h3>
+                    
+                    <div class="space-y-4">
+                        <!-- Scale Slider -->
+                        <div>
+                            <label for="scale-slider" class="block text-sm font-medium text-gray-300">Scale Factor (S: <span id="scale-value">1.50</span>)</label>
+                            <input type="range" id="scale-slider" min="0.5" max="3" step="0.01" value="1.5" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg">
+                        </div>
+                        
+                        <!-- Spin Speed Slider -->
+                        <div>
+                            <label for="spin-slider" class="block text-sm font-medium text-gray-300">Spin Speed (Ω: <span id="spin-value">0.30</span> rad/s)</label>
+                            <input type="range" id="spin-slider" min="0" max="1" step="0.01" value="0.3" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg">
+                        </div>
+                        
+                        <!-- Opacity Slider -->
+                        <div>
+                            <label for="opacity-slider" class="block text-sm font-medium text-gray-300">Opacity (α: <span id="opacity-value">0.45</span>)</label>
+                            <input type="range" id="opacity-slider" min="0.1" max="1" step="0.01" value="0.45" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg">
+                        </div>
+                        
+                        <!-- Emissive Color Picker -->
+                        <div>
+                            <label for="emissive-color" class="block text-sm font-medium text-gray-300 mb-2">Emissive Color</label>
+                            <input type="color" id="emissive-color" value="#00ffff" class="w-full h-10 rounded border-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Log -->
+                <div class="p-6 bg-code-gray rounded-xl shadow-inner border border-holo-green/20">
+                    <h3 class="text-xl font-bold text-holo-green mb-4 border-b border-holo-green/50 pb-2">System Log</h3>
+                    <pre id="status-log" class="text-xs text-holo-green/80 font-mono h-32 overflow-y-auto bg-black p-2 rounded border border-gray-700/50">
+[INIT] System Core Loading...
+</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Placeholder Model URL - Uses a public domain model accessible via CDN for demonstration
+        const MODEL_URL = 'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb';
+        
+        let scene, camera, renderer, controls, modelGroup;
+        let spinSpeed = 0.3;
+
+        const log = (message) => {
+            const logElement = document.getElementById('status-log');
+            const now = new Date().toLocaleTimeString('en-US');
+            logElement.innerHTML = `[${now}] ${message}\n${logElement.innerHTML}`;
+        };
+
+        // --- Core Hologram Setup (Equivalent to HologramClone component logic) ---
+        function applyHologramMaterial(gltf, initialOpacity, initialColor) {
+            const hexColor = initialColor.replace('#', '0x');
+            const emissiveColor = new THREE.Color(parseInt(hexColor));
+            
+            gltf.scene.traverse((obj) => {
+                if (obj.isMesh) {
+                    const mesh = obj;
+                    
+                    // Clone the material to avoid modifying shared materials across instances
+                    const originalMaterial = mesh.material;
+                    const newMaterial = new THREE.MeshStandardMaterial({
+                        color: originalMaterial.color,
+                        metalness: originalMaterial.metalness,
+                        roughness: originalMaterial.roughness,
+                        map: originalMaterial.map,
+                        // --- Hologram Look Properties ---
+                        transparent: true,
+                        opacity: initialOpacity,
+                        emissive: emissiveColor,
+                        emissiveIntensity: 1.0, 
+                        depthWrite: false, // Prevents Z-fighting and enhances the ghost look
+                        wireframe: true, // Add wireframe for extra tech look
+                    });
+                    
+                    mesh.material = newMaterial;
+                }
+            });
+        }
+        
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('container');
+            const loadingStatus = document.getElementById('loading-status');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a); // Match background
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 2, 5); 
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            // Lighting (simplified for hologram effect)
+            scene.add(new THREE.AmbientLight(0x404040, 2)); 
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 10, 5);
+            scene.add(directionalLight);
+            
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = false;
+            
+            // Load Model (Using the external GLTFLoader object)
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                MODEL_URL,
+                (gltf) => {
+                    log("SUCCESS: GLTF Model caricato.");
+                    
+                    modelGroup = new THREE.Group();
+                    modelGroup.add(gltf.scene);
+                    scene.add(modelGroup);
+                    
+                    // Initial hologram settings
+                    const initialScale = parseFloat(document.getElementById('scale-slider').value);
+                    const initialOpacity = parseFloat(document.getElementById('opacity-slider').value);
+                    const initialColor = document.getElementById('emissive-color').value;
+
+                    // Apply the look
+                    applyHologramMaterial(gltf, initialOpacity, initialColor);
+
+                    // Apply initial scale
+                    modelGroup.scale.set(initialScale, initialScale, initialScale);
+                    
+                    loadingStatus.style.display = 'none';
+                    log("READY: Hologram Clone Attivo.");
+                    animate(); // Start the loop after loading
+                },
+                (xhr) => {
+                    document.getElementById('loading-status').innerText = `Caricamento in corso: ${Math.round(xhr.loaded / xhr.total * 100)}%`;
+                },
+                (error) => {
+                    log(`ERROR: Fallimento nel caricamento del modello: ${error.message}`);
+                    document.getElementById('loading-status').innerText = 'ERRORE: Impossibile caricare il modello 3D. Controllare la console.';
+                    console.error('Error loading GLTF model:', error);
+                }
+            );
+            
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- Animation Loop (Equivalent to useFrame logic) ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            controls.update();
+            
+            // Simple spin animation
+            if (modelGroup) {
+                modelGroup.rotation.y += spinSpeed * (1/60); // delta approximation
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // --- UI Interaction Handlers ---
+        
+        function setupUIHandlers() {
+            // Scale Slider
+            const scaleSlider = document.getElementById('scale-slider');
+            scaleSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                document.getElementById('scale-value').innerText = value.toFixed(2);
+                if (modelGroup) {
+                    modelGroup.scale.set(value, value, value);
+                    log(`PARAM: Scala impostata a ${value.toFixed(2)}.`);
+                }
+            });
+
+            // Spin Speed Slider
+            const spinSlider = document.getElementById('spin-slider');
+            spinSlider.addEventListener('input', (e) => {
+                spinSpeed = parseFloat(e.target.value);
+                document.getElementById('spin-value').innerText = spinSpeed.toFixed(2);
+                log(`PARAM: Velocità di rotazione impostata a ${spinSpeed.toFixed(2)} rad/s.`);
+            });
+            
+            // Opacity Slider
+            const opacitySlider = document.getElementById('opacity-slider');
+            opacitySlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                document.getElementById('opacity-value').innerText = value.toFixed(2);
+                if (modelGroup) {
+                    modelGroup.traverse((obj) => {
+                        if (obj.isMesh && obj.material.transparent) {
+                            obj.material.opacity = value;
+                        }
+                    });
+                    log(`PARAM: Opacità impostata a ${value.toFixed(2)}.`);
+                }
+            });
+
+            // Emissive Color Picker
+            const colorPicker = document.getElementById('emissive-color');
+            colorPicker.addEventListener('input', (e) => {
+                const newColor = new THREE.Color(e.target.value);
+                if (modelGroup) {
+                    modelGroup.traverse((obj) => {
+                        if (obj.isMesh) {
+                            obj.material.emissive.copy(newColor);
+                        }
+                    });
+                    log(`PARAM: Colore emissivo impostato su ${e.target.value}.`);
+                }
+            });
+        }
+
+        // --- Start the application ---
+        window.onload = function() {
+            init();
+            setupUIHandlers();
+        };
+
+    </script>
+</body>
+</html>
